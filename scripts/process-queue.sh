@@ -12,7 +12,11 @@ while true; do
   if [[ -n "$url" ]]; then
     echo "[$(date '+%H:%M:%S')] Processing: $url"
 
-    if claude -p "Use the skill /youtube-summarizer $url" --output-format stream-json --include-partial-messages --permission-mode acceptEdits --dangerously-skip-permissions 2>/dev/null | jq -r '
+    # Use gtimeout (coreutils) with fallback to timeout
+    TIMEOUT_CMD="gtimeout"
+    command -v gtimeout &>/dev/null || TIMEOUT_CMD="timeout"
+
+    $TIMEOUT_CMD 1800 claude -p "Use the skill /youtube-summarizer $url" --output-format stream-json --include-partial-messages --permission-mode acceptEdits --dangerously-skip-permissions 2>/dev/null | jq -r '
       if .type == "assistant" then
         .message.content[]? |
         if .type == "text" then .text
@@ -31,12 +35,18 @@ while true; do
         else empty end
       elif .type == "result" then "✅ Done"
       else empty end
-    '; then
+    '
+    exit_code=${PIPESTATUS[0]}
+
+    if [[ $exit_code -eq 124 ]]; then
+      echo "[$(date '+%H:%M:%S')] Timeout (30min): $url — will retry"
+      # URL stays in queue, loop continues
+    elif [[ $exit_code -eq 0 ]]; then
       # Remove the processed URL from the file
       grep -v "^${url}$" "$QUEUE_FILE" > "$QUEUE_FILE.tmp" && mv "$QUEUE_FILE.tmp" "$QUEUE_FILE"
       echo "[$(date '+%H:%M:%S')] Done: $url"
     else
-      echo "[$(date '+%H:%M:%S')] Failed: $url — keeping in queue"
+      echo "[$(date '+%H:%M:%S')] Failed (exit $exit_code): $url — keeping in queue"
     fi
   fi
 
