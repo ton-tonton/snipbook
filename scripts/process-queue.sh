@@ -12,6 +12,9 @@ while true; do
   if [[ -n "$url" ]]; then
     echo "[$(date '+%H:%M:%S')] Processing: $url"
 
+    # Count existing .md files before processing
+    md_count_before=$(find . -name "*.md" -not -path "./.git/*" | wc -l)
+
     # Use gtimeout (coreutils) with fallback to timeout
     TIMEOUT_CMD="gtimeout"
     command -v gtimeout &>/dev/null || TIMEOUT_CMD="timeout"
@@ -42,9 +45,14 @@ while true; do
       echo "[$(date '+%H:%M:%S')] Timeout (30min): $url — will retry"
       # URL stays in queue, loop continues
     elif [[ $exit_code -eq 0 ]]; then
-      # Remove the processed URL from the file
-      grep -v "^${url}$" "$QUEUE_FILE" > "$QUEUE_FILE.tmp" && mv "$QUEUE_FILE.tmp" "$QUEUE_FILE"
-      echo "[$(date '+%H:%M:%S')] Done: $url"
+      # Check if a new .md file was created
+      md_count_after=$(find . -name "*.md" -not -path "./.git/*" | wc -l)
+      if [[ $md_count_after -gt $md_count_before ]]; then
+        grep -v "^${url}$" "$QUEUE_FILE" > "$QUEUE_FILE.tmp" && mv "$QUEUE_FILE.tmp" "$QUEUE_FILE"
+        echo "[$(date '+%H:%M:%S')] Done: $url"
+      else
+        echo "[$(date '+%H:%M:%S')] No .md file created for: $url — keeping in queue"
+      fi
     else
       echo "[$(date '+%H:%M:%S')] Failed (exit $exit_code): $url — keeping in queue"
     fi
